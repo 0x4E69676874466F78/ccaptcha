@@ -308,11 +308,13 @@ static gdImagePtr draw_captcha(const wchar_t *str) {
     uint iw = 10;
     uint ih = _captcha_sz * 1.9;
     gdImagePtr img = gdImageCreateTrueColor(_captcha_base_w, _captcha_base_h);
+//  gdImagePtr img = gdImageCreate(_captcha_base_w, _captcha_base_h);
     gdImageFill(img, 0, 0, _captcha_bg);
     gdImageSetThickness(img, _captcha_lw);
     
     iw += draw_string(img, 5, 5, _captcha_sz, str, _captcha_fg, _captcha_dist);
     gdImagePtr img_ret = gdImageCreateTrueColor(iw, ih);
+//	gdImagePtr img_ret = gdImageCreate(iw, ih);
     gdImageSetThickness(img_ret, _captcha_lw);
     gdImageCopy(img_ret, img, 0, 0, 0, 0, iw+10, ih);
     int i;
