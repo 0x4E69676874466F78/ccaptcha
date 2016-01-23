@@ -1,12 +1,13 @@
 /* 2ch.ru captcha lookalike
  * 
  * written by noko3
- * мелкие изменения NightFox
+ * мелкие изменения NightFox (спасибо j123123 за HEX→RGB)
  * License: GPLv2, see COPYING
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <time.h>
@@ -16,7 +17,7 @@
 #include "lib/hashtable.c"
 
 #define BEZIER_STEPS 30
-#define CAPTCHA_BG 0xeeeeee
+#define CAPTCHA_BG "EEEEEE"
 #define CAPTCHA_FG 0x222222
 #define CAPTCHA_BASE_H 50
 #define CAPTCHA_SZ 40
@@ -33,11 +34,30 @@ uint _captcha_lw;
 uint _captcha_nlines_min;
 uint _captcha_nlines_max;
 float _captcha_dist;
-uint32_t _captcha_bg;
+char *_captcha_bg;
 uint32_t _captcha_fg;
 const char *_letters;
 
 enum { T_LINE=0, T_CURVE=1 };
+
+// для HEX 000000-FFFFFF (только в верхнем регистре)
+inline uint8_t conv0_F(uint8_t);
+void conv000000_FFFFFF(uint8_t *, uint8_t *, uint8_t *, uint8_t *);
+
+const uint8_t a[] = {
+	[0x0] = 0, [0x1] = 1, [0x2] = 2,
+	[0x3] = 3, [0x4] = 4, [0x5] = 5,
+	[0x6] = 6, [0x7] = 7, [0x8] = 8,
+	[0x9] = 9, 
+	[0x11] = 10, [0x12] = 11, [0x13] = 12,
+	[0x14] = 13, [0x15] = 14, [0x16] = 15
+};
+
+inline uint8_t conv0_F(uint8_t val)
+{
+   return a[val - '0'];
+}
+//
 
 static inline int rand_i(int min, int max) {
 	if(max <= min) return max;
@@ -201,10 +221,55 @@ static uint draw_from_chinfo(gdImagePtr img, uint h, float A, uint x, uint y,
 	return h*A;
 }
 
-
-
-
-
+static uint draw_letter(gdImagePtr img, uint h, uint x, uint y,
+                        const char *code, uint32_t color, float dist) {
+	struct letter my_l, *L = htable_find(letters, code);
+	memcpy(&my_l, L, sizeof(struct letter));
+	memcpy(my_l.h2s, L->h2s, 32*sizeof(struct howto));
+	float A = my_l.widthFactor;
+	
+	if (dist > 0.0) {
+		int i, j, T;
+		struct pt *tmp;
+		float *ptr;
+		char buf[32] = {0};
+		struct hash_table *my_HT = malloc(sizeof(struct hash_table));
+		htable_init(my_HT, 256);
+		for (i = 0; my_l.h2s[i].type != (uint8_t)-1; i++) {
+			if (my_l.h2s[i].type == T_LINE)
+				T = 4;
+			else if (my_l.h2s[i].type == T_CURVE)
+				T = 8;
+			for (j=0; j<T/2; j++) {
+				snprintf(buf, 31, "%f %f",
+					my_l.h2s[i].instr[2*j], my_l.h2s[i].instr[2*j+1]);
+				tmp = malloc(sizeof(struct pt));
+				tmp->x = my_l.h2s[i].instr[2*j];
+				tmp->x += dist * 2.0*rand()/RAND_MAX;
+				tmp->y = my_l.h2s[i].instr[2*j+1];
+				tmp->y += dist * 2.0*rand()/RAND_MAX;
+				htable_set(my_HT, buf, tmp, sizeof(struct pt));
+				free(tmp);
+			}
+		}
+		for (i = 0; my_l.h2s[i].type != (uint8_t)-1; i++) {
+			if (my_l.h2s[i].type == T_LINE)
+				T = 4;
+			else if (my_l.h2s[i].type == T_CURVE)
+				T = 8;
+			for (j=0; j<T/2; j++) {
+				snprintf(buf, 31, "%f %f",
+					my_l.h2s[i].instr[2*j], my_l.h2s[i].instr[2*j+1]);
+				tmp = htable_find(my_HT, buf);
+				my_l.h2s[i].instr[2*j] = tmp->x;
+				my_l.h2s[i].instr[2*j+1] = tmp->y;
+			}
+		}
+		htable_kill(my_HT);
+	}
+	
+	return draw_from_chinfo(img, h, A, x, y, &my_l, color);
+}
 
 //////////////////////////////////////////////////////////////////////////////
 static uint iw_letter(uint h, uint x, uint y, const char *code, float dist) {
@@ -268,64 +333,6 @@ static uint iw_string(uint x, uint y, uint h, const wchar_t *str, float dist) {
 }
 //////////////////////////////////////////////////////////////////////////////
 
-
-
-
-
-
-
-
-static uint draw_letter(gdImagePtr img, uint h, uint x, uint y,
-                        const char *code, uint32_t color, float dist) {
-	struct letter my_l, *L = htable_find(letters, code);
-	memcpy(&my_l, L, sizeof(struct letter));
-	memcpy(my_l.h2s, L->h2s, 32*sizeof(struct howto));
-	float A = my_l.widthFactor;
-	int a,b,c;
-	
-	if (dist > 0.0) {
-		int i, j, T;
-		struct pt *tmp;
-		float *ptr;
-		char buf[32] = {0};
-		struct hash_table *my_HT = malloc(sizeof(struct hash_table));
-		htable_init(my_HT, 256);
-		for (i = 0; my_l.h2s[i].type != (uint8_t)-1; i++) {
-			if (my_l.h2s[i].type == T_LINE)
-				T = 4;
-			else if (my_l.h2s[i].type == T_CURVE)
-				T = 8;
-			for (j=0; j<T/2; j++) {
-				snprintf(buf, 31, "%f %f",
-					my_l.h2s[i].instr[2*j], my_l.h2s[i].instr[2*j+1]);
-				tmp = malloc(sizeof(struct pt));
-				tmp->x = my_l.h2s[i].instr[2*j];
-				tmp->x += dist * 2.0*rand()/RAND_MAX;
-				tmp->y = my_l.h2s[i].instr[2*j+1];
-				tmp->y += dist * 2.0*rand()/RAND_MAX;
-				htable_set(my_HT, buf, tmp, sizeof(struct pt));
-				free(tmp);
-			}
-		}
-		for (i = 0; my_l.h2s[i].type != (uint8_t)-1; i++) {
-			if (my_l.h2s[i].type == T_LINE)
-				T = 4;
-			else if (my_l.h2s[i].type == T_CURVE)
-				T = 8;
-			for (j=0; j<T/2; j++) {
-				snprintf(buf, 31, "%f %f",
-					my_l.h2s[i].instr[2*j], my_l.h2s[i].instr[2*j+1]);
-				tmp = htable_find(my_HT, buf);
-				my_l.h2s[i].instr[2*j] = tmp->x;
-				my_l.h2s[i].instr[2*j+1] = tmp->y;
-			}
-		}
-		htable_kill(my_HT);
-	}
-	
-	return draw_from_chinfo(img, h, A, x, y, &my_l, color);
-}
-
 static uint draw_string(gdImagePtr img, uint x, uint y, uint h,
                         const wchar_t *str,
                         uint32_t color, float dist) {
@@ -378,14 +385,27 @@ static void draw_bline(gdImagePtr ximg, uint nCuts, float maxH, uint32_t color) 
 	free(pts);
 }
 
+void conv000000_FFFFFF(uint8_t *str, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+	*r = (conv0_F(str[0]) << 4) | conv0_F(str[1]);
+	*g = (conv0_F(str[2]) << 4) | conv0_F(str[3]);
+	*b = (conv0_F(str[4]) << 4) | conv0_F(str[5]);
+}
+
+
 static gdImagePtr draw_captcha(const wchar_t *str) {
 	uint iw = 10 + iw_string(5, 5, _captcha_sz, str, _captcha_dist);
 	uint ih = _captcha_sz * 1.9;
+	uint8_t r, g, b;
+
 	gdImagePtr img = gdImageCreate(iw, _captcha_base_h);
-	gdImageColorAllocate(img, 255, 255, 255); // убрать хардкод
+
+	conv000000_FFFFFF(_captcha_bg, &r, &g, &b);
+	gdImageColorAllocate(img, r, g, b);
+
 	gdImageSetThickness(img, _captcha_lw);
 	
-    iw += draw_string(img, 5, 5, _captcha_sz, str, _captcha_fg, _captcha_dist);
+	iw += draw_string(img, 5, 5, _captcha_sz, str, _captcha_fg, _captcha_dist);
 	int i;
 	for (i = 0; i < rand_i(_captcha_nlines_min, _captcha_nlines_max); i++) {
 		draw_bline(img, rand_i(1, wcslen(str)/1.5), 1, _captcha_fg);
@@ -407,25 +427,25 @@ int main(int argc, char **argv) {
 	int i;
 	for (i = 0; i < argc; i++) {
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-safe-h"))
-        	_captcha_base_h = atoi(argv[i+1]);
+		   _captcha_base_h = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-bg"))
-        	_captcha_bg = strtol(argv[i+1], NULL, 16);
+		   _captcha_bg = argv[i+1];
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-fg"))
-        	_captcha_fg = strtol(argv[i+1], NULL, 16);
+		   _captcha_fg = strtol(argv[i+1], NULL, 16);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-sz"))
-        	_captcha_sz = atoi(argv[i+1]);
+		   _captcha_sz = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-lw"))
-        	_captcha_lw = atoi(argv[i+1]);
+		   _captcha_lw = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-nlines-min"))
-        	_captcha_nlines_min = atoi(argv[i+1]);
+		   _captcha_nlines_min = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-nlines-max"))
-        	_captcha_nlines_max = atoi(argv[i+1]);
+		   _captcha_nlines_max = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--captcha-dist"))
-        	_captcha_dist = atof(argv[i+1]);
+		   _captcha_dist = atof(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--bezier-steps"))
-        	_bezier_steps = atoi(argv[i+1]);
+		   _bezier_steps = atoi(argv[i+1]);
 		if(i+1 < argc && !strcmp(argv[i], "--letters"))
-        	_letters = argv[i+1];
+		   _letters = argv[i+1];
 	}
 	
 	setlocale(LC_ALL, "C.UTF-8");
