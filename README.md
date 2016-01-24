@@ -14,8 +14,7 @@ An example:
 
 ### Command-line options:
 ```
---captcha-safe-w        Safe drawing area width and height. The default
---captcha-safe-h        safe area size is 400x100 pixels which should be
+--captcha-safe-h        safe height is 100 pixels which should be
                         (more than) enough for most cases.
 --captcha-bg            Background and foreground colours in RRGGBB form.
 --captcha-fg            The default background and foreground colours are
@@ -33,10 +32,11 @@ An example:
 
 ## Known bugs
 
-Will segfault if you try to run without letters.txt.
+Упадёт (segfault) если запустить без letters.txt или использовать знаки отсутствующие в нём.
+В letters.txt не воспринимается знак пробела, то есть при пробелах будет падать. Используйте преобразование в неразрывный пробел.
 
 ## TODO
-  - Nothing [DONE]
+  - Поддержка дробных значений captcha-dist
 
 ## License
 [GPLv2](http://www.gnu.org/licenses/gpl-2.0.html)
